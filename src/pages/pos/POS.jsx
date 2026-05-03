@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { Search, Trash2, ShoppingCart, CreditCard, Wallet, Banknote, Receipt, ArrowLeft } from 'lucide-react';
 import { Button } from '../../components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/Card';
@@ -7,14 +7,17 @@ import { EmptyState } from '../../components/ui/EmptyState';
 import { posService } from '../../services/posService';
 import { inventoryService } from '../../services/inventoryService';
 import { useToast } from '../../hooks/useToast';
-import { useDebounce } from '../../hooks/useDebounce';
-import { useAuthStore } from '../../store/useAuthStore';
-import { ROLES } from '../../utils/constants';
 import { validateCreateInvoice } from '../../utils/validators';
 import { formatCurrency } from '../../utils/currency';
 
+const TAX_RATE = 15;
+
+const roundMoney = (value) => Math.round(Number(value || 0) * 100) / 100;
+const getAvailableStock = (item) => Number(item.quantity || 0);
+const isExpired = (item) => item.expiryDate && new Date(item.expiryDate) <= new Date();
+const isSellable = (item) => item?.isActive !== false && getAvailableStock(item) > 0 && !isExpired(item);
+
 export default function POSPage() {
-  const { user } = useAuthStore();
   const toast = useToast();
 
   // View state
@@ -59,9 +62,19 @@ export default function POSPage() {
   };
 
   const addToCart = (product) => {
+    if (!isSellable(product)) {
+      toast.error('This medicine cannot be sold because it is inactive, expired, or out of stock.');
+      return;
+    }
+
     setCart((prev) => {
       const existing = prev.find((item) => item._id === product._id);
       if (existing) {
+        if (existing.quantity >= getAvailableStock(existing)) {
+          toast.error(`Only ${getAvailableStock(existing)} units available.`);
+          return prev;
+        }
+
         return prev.map((item) =>
           item._id === product._id
             ? { ...item, quantity: item.quantity + 1 }
@@ -79,8 +92,13 @@ export default function POSPage() {
     setCart((prev) =>
       prev.map((item) => {
         if (item._id === id) {
-          const newQ = item.quantity + delta;
-          return newQ > 0 ? { ...item, quantity: newQ } : item;
+          const nextQuantity = item.quantity + delta;
+          if (nextQuantity < 1) return item;
+          if (nextQuantity > getAvailableStock(item)) {
+            toast.error(`Only ${getAvailableStock(item)} units available.`);
+            return item;
+          }
+          return { ...item, quantity: nextQuantity };
         }
         return item;
       })
@@ -91,33 +109,37 @@ export default function POSPage() {
     setCart((prev) => prev.filter((item) => item._id !== id));
   };
 
-  // Use sellingPrice (backend field name) for calculations
-  const subtotal = cart.reduce((sum, item) => sum + (item.sellingPrice || 0) * item.quantity, 0);
-  const tax = subtotal * 0.15;
-  const total = subtotal + tax - discount;
+  const subtotal = roundMoney(cart.reduce((sum, item) => sum + Number(item.sellingPrice || 0) * item.quantity, 0));
+  const safeDiscount = Math.min(Math.max(Number(discount) || 0, 0), subtotal);
+  const itemDiscountPercent = subtotal > 0 ? roundMoney((safeDiscount / subtotal) * 100) : 0;
+  const discountTotal = roundMoney(subtotal * (itemDiscountPercent / 100));
+  const taxableAmount = roundMoney(subtotal - discountTotal);
+  const tax = roundMoney(taxableAmount * (TAX_RATE / 100));
+  const total = roundMoney(taxableAmount + tax);
 
   // ─── Checkout ─────────────────────────────────────────────────────────
   const handleCheckout = async () => {
     if (cart.length === 0) return;
 
-    // Build payload matching backend createInvoiceSchema EXACTLY:
-    // { items: [{ medicine, quantity, discount? }], paymentMethod, paidAmount, notes?, taxRate? }
+    const invalidItem = cart.find((item) => !isSellable(item) || item.quantity > getAvailableStock(item));
+    if (invalidItem) {
+      toast.error(`${invalidItem.name} is inactive, expired, out of stock, or exceeds available stock.`);
+      return;
+    }
+
     const invoiceData = {
       items: cart.map((item) => ({
         medicine: item._id,
         quantity: item.quantity,
-        // Per-item discount as percentage (0-100), default 0
-        discount: 0,
+        discount: itemDiscountPercent,
       })),
       paymentMethod,
-      paidAmount: Math.max(0, total),
-      taxRate: 15,
+      paidAmount: total,
+      taxRate: TAX_RATE,
     };
 
-    // Client-side validation
     const validation = validateCreateInvoice(invoiceData);
     if (!validation.valid) {
-      // Show first error as toast
       const firstError = Object.values(validation.errors)[0];
       toast.error(firstError);
       return;
@@ -129,8 +151,8 @@ export default function POSPage() {
       toast.success('Invoice created successfully!');
       setCart([]);
       setDiscount(0);
-    } catch (err) {
-      // Toast is shown globally by api interceptor
+    } catch {
+      // Toast is shown globally by the API interceptor.
     } finally {
       setCheckoutLoading(false);
     }
@@ -246,17 +268,20 @@ export default function POSPage() {
                   <button
                     key={product._id}
                     onClick={() => addToCart(product)}
-                    className="w-full flex items-center justify-between p-4 rounded-xl border border-white/5 bg-background hover:bg-white/5 transition-colors text-left"
+                    disabled={!isSellable(product)}
+                    className={`w-full flex items-center justify-between p-4 rounded-xl border border-white/5 bg-background transition-colors text-left ${
+                      isSellable(product) ? 'hover:bg-white/5' : 'opacity-50 cursor-not-allowed'
+                    }`}
                   >
                     <div>
                       <p className="font-medium text-white">{product.name}</p>
                       <p className="text-xs text-gray-500">
-                        {product.genericName || product.category?.name || (typeof product.category === 'string' ? product.category : '')} · Stock: {product.quantity}
+                        {product.genericName || product.category?.name || (typeof product.category === 'string' ? product.category : '')} - Stock: {product.quantity}
                       </p>
                     </div>
                     <div className="text-right">
                       <p className="text-primary font-semibold">{formatCurrency(product.sellingPrice)}</p>
-                      <p className="text-[10px] text-gray-500">Click to add</p>
+                      <p className="text-[10px] text-gray-500">{isSellable(product) ? 'Click to add' : 'Unavailable'}</p>
                     </div>
                   </button>
                 ))}
@@ -276,7 +301,7 @@ export default function POSPage() {
         <CardHeader className="border-b border-white/5 bg-background/50 shrink-0">
           <CardTitle className="text-lg flex justify-between">
             <span>Current Order</span>
-            <span className="text-gray-400 font-normal text-sm">{cart.length} items</span>
+            <span className="text-gray-400 font-normal text-sm">{cart.reduce((sum, item) => sum + item.quantity, 0)} items</span>
           </CardTitle>
         </CardHeader>
 
@@ -292,7 +317,7 @@ export default function POSPage() {
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="flex items-center gap-1 bg-white/5 rounded-lg border border-white/10">
-                    <button onClick={() => updateQuantity(item._id, -1)} className="w-7 h-7 flex items-center justify-center hover:text-white text-gray-400 transition">−</button>
+                    <button onClick={() => updateQuantity(item._id, -1)} className="w-7 h-7 flex items-center justify-center hover:text-white text-gray-400 transition">-</button>
                     <span className="w-6 text-center text-sm font-medium">{item.quantity}</span>
                     <button onClick={() => updateQuantity(item._id, 1)} className="w-7 h-7 flex items-center justify-center hover:text-white text-gray-400 transition">+</button>
                   </div>
@@ -309,19 +334,20 @@ export default function POSPage() {
         <div className="border-t border-white/5 bg-background/50 p-4 space-y-4 shrink-0">
           <div className="space-y-2 text-sm">
             <div className="flex justify-between text-gray-400"><span>Subtotal</span><span>{formatCurrency(subtotal)}</span></div>
-            <div className="flex justify-between text-gray-400"><span>Tax (15%)</span><span>{formatCurrency(tax)}</span></div>
+            <div className="flex justify-between text-gray-400"><span>Discount</span><span>-{formatCurrency(discountTotal)}</span></div>
+            <div className="flex justify-between text-gray-400"><span>Tax ({TAX_RATE}%)</span><span>{formatCurrency(tax)}</span></div>
             <div className="flex justify-between items-center">
-              <span className="text-gray-400">Discount</span>
+              <span className="text-gray-400">Discount amount</span>
               <div className="flex items-center">
                 <span className="text-gray-400 mr-1">-EGP</span>
-                <input type="number" value={discount} onChange={(e) => setDiscount(Number(e.target.value) || 0)} className="w-16 bg-transparent border-b border-white/20 text-right text-white focus:outline-none focus:border-primary text-sm" min="0" />
+                <input type="number" value={discount} onChange={(e) => setDiscount(Math.min(Math.max(Number(e.target.value) || 0, 0), subtotal))} className="w-16 bg-transparent border-b border-white/20 text-right text-white focus:outline-none focus:border-primary text-sm" min="0" max={subtotal} />
               </div>
             </div>
           </div>
 
           <div className="pt-3 border-t border-white/5 flex justify-between items-center">
             <span className="text-lg font-semibold text-white">Total</span>
-            <span className="text-2xl font-bold text-primary">{formatCurrency(Math.max(0, total))}</span>
+            <span className="text-2xl font-bold text-primary">{formatCurrency(total)}</span>
           </div>
 
           <div className="space-y-3">
