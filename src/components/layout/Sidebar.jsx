@@ -11,43 +11,44 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { useAuthStore } from '../../store/useAuthStore';
+import { isArabic, useLanguageStore } from '../../store/useLanguageStore';
 import { useUIStore } from '../../store/useUIStore';
 import { ROLES } from '../../utils/constants';
 import { cn } from '../../utils/cn';
 
 const navItems = [
   {
-    name: 'Dashboard',
+    labelKey: 'nav.dashboard',
     icon: LayoutDashboard,
     path: '/dashboard',
     roles: [ROLES.ADMIN, ROLES.PHARMACIST],
   },
   {
-    name: 'Inventory',
+    labelKey: 'nav.inventory',
     icon: Package,
     path: '/inventory',
     roles: [ROLES.ADMIN, ROLES.PHARMACIST],
   },
   {
-    name: 'Point of Sale',
+    labelKey: 'nav.pos',
     icon: MonitorSmartphone,
     path: '/pos',
     roles: [ROLES.ADMIN, ROLES.PHARMACIST, ROLES.CASHIER],
   },
   {
-    name: 'Patients',
+    labelKey: 'nav.patients',
     icon: ClipboardList,
     path: '/patients',
     roles: [ROLES.ADMIN, ROLES.PHARMACIST],
   },
   {
-    name: 'Reports',
+    labelKey: 'nav.reports',
     icon: BarChart3,
     path: '/reports',
     roles: [ROLES.ADMIN],
   },
   {
-    name: 'Users',
+    labelKey: 'nav.users',
     icon: Users,
     path: '/users',
     roles: [ROLES.ADMIN],
@@ -56,6 +57,8 @@ const navItems = [
 
 export function Sidebar() {
   const { user } = useAuthStore();
+  const { language, t } = useLanguageStore();
+  const rtl = isArabic(language);
   const { sidebarCollapsed, toggleSidebar, sidebarMobileOpen, closeMobileSidebar } =
     useUIStore();
   const navigate = useNavigate();
@@ -75,10 +78,8 @@ export function Sidebar() {
       className={cn(
         'bg-card border-r border-white/5 h-screen flex flex-col fixed top-0 z-50 transition-all duration-300',
         sidebarCollapsed ? 'w-20' : 'w-64',
-        // Mobile: slide in/out
-        sidebarMobileOpen
-          ? 'left-0'
-          : '-left-64 lg:left-0'
+        rtl ? 'border-l border-r-0' : 'border-r',
+        sidebarMobileOpen ? (rtl ? 'right-0' : 'left-0') : (rtl ? '-right-64 lg:right-0' : '-left-64 lg:left-0')
       )}
     >
       {/* Brand Header */}
@@ -106,9 +107,9 @@ export function Sidebar() {
           className="hidden lg:flex p-1.5 text-gray-500 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
         >
           {sidebarCollapsed ? (
-            <ChevronRight size={16} />
+            rtl ? <ChevronLeft size={16} /> : <ChevronRight size={16} />
           ) : (
-            <ChevronLeft size={16} />
+            rtl ? <ChevronRight size={16} /> : <ChevronLeft size={16} />
           )}
         </button>
       </div>
@@ -117,12 +118,12 @@ export function Sidebar() {
       <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
         {!sidebarCollapsed && (
           <p className="text-[10px] font-semibold uppercase tracking-widest text-gray-600 px-3 mb-3">
-            Main Menu
+            {t('mainMenu')}
           </p>
         )}
         {visibleItems.map((item) => (
           <NavLink
-            key={item.name}
+            key={item.path}
             to={item.path}
             onClick={() => closeMobileSidebar()}
             className={({ isActive }) =>
@@ -134,15 +135,18 @@ export function Sidebar() {
                 sidebarCollapsed && 'justify-center px-0'
               )
             }
-            title={sidebarCollapsed ? item.name : undefined}
+            title={sidebarCollapsed ? t(item.labelKey) : undefined}
           >
             <item.icon size={20} className="shrink-0" />
-            {!sidebarCollapsed && <span className="text-sm">{item.name}</span>}
+            {!sidebarCollapsed && <span className="text-sm">{t(item.labelKey)}</span>}
 
             {/* Tooltip for collapsed mode */}
             {sidebarCollapsed && (
-              <div className="absolute left-full ml-2 px-2 py-1 bg-card border border-white/10 rounded-lg text-xs text-white whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity shadow-xl">
-                {item.name}
+              <div className={cn(
+                'absolute px-2 py-1 bg-card border border-white/10 rounded-lg text-xs text-white whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity shadow-xl',
+                rtl ? 'right-full mr-2' : 'left-full ml-2'
+              )}>
+                {t(item.labelKey)}
               </div>
             )}
           </NavLink>

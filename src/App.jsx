@@ -4,6 +4,7 @@ import { Layout } from './components/layout/Layout';
 import { ProtectedRoute } from './components/layout/ProtectedRoute';
 import { ToastContainer } from './components/ui/Toast';
 import { useAuthStore } from './store/useAuthStore';
+import { isArabic, useLanguageStore } from './store/useLanguageStore';
 import { ROLES } from './utils/constants';
 import { Loader2 } from 'lucide-react';
 
@@ -20,12 +21,14 @@ const UserManagement = React.lazy(() => import('./pages/users/UserManagement'));
 // ─── Loading screen ─────────────────────────────────────────────────────────
 
 function AppLoader() {
+  const t = useLanguageStore((state) => state.t);
+
   return (
     <div className="h-screen flex flex-col items-center justify-center bg-background gap-4">
       <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center">
         <Loader2 size={24} className="text-white animate-spin" />
       </div>
-      <p className="text-gray-400 text-sm animate-pulse">Loading PharmERP...</p>
+      <p className="text-gray-400 text-sm animate-pulse">{t('appLoading')}</p>
     </div>
   );
 }
@@ -44,10 +47,16 @@ function PageLoader() {
 
 function App() {
   const { checkAuth, initializing } = useAuthStore();
+  const language = useLanguageStore((state) => state.language);
 
   useEffect(() => {
     checkAuth();
   }, [checkAuth]);
+
+  useEffect(() => {
+    document.documentElement.lang = language;
+    document.documentElement.dir = isArabic(language) ? 'rtl' : 'ltr';
+  }, [language]);
 
   if (initializing) {
     return <AppLoader />;

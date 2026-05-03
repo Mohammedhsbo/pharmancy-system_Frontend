@@ -1,16 +1,18 @@
-import React from 'react';
 import { Outlet } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
 import { NotificationDropdown } from './NotificationDropdown';
 import { ToastContainer } from '../ui/Toast';
 import { useAuthStore } from '../../store/useAuthStore';
+import { isArabic, useLanguageStore } from '../../store/useLanguageStore';
 import { useUIStore } from '../../store/useUIStore';
 import { Avatar, AvatarFallback } from '../ui/Avatar';
-import { Menu, LogOut } from 'lucide-react';
+import { Languages, Menu, LogOut } from 'lucide-react';
 
 export function Layout() {
   const { user, logout } = useAuthStore();
   const { sidebarCollapsed, sidebarMobileOpen, openMobileSidebar, closeMobileSidebar } = useUIStore();
+  const { language, t, toggleLanguage } = useLanguageStore();
+  const rtl = isArabic(language);
 
   return (
     <div className="min-h-screen bg-background text-white flex">
@@ -28,7 +30,9 @@ export function Layout() {
       {/* Main area */}
       <div
         className={`flex-1 flex flex-col min-h-screen transition-all duration-300 ${
-          sidebarCollapsed ? 'lg:ml-20' : 'lg:ml-64'
+          sidebarCollapsed
+            ? rtl ? 'lg:mr-20' : 'lg:ml-20'
+            : rtl ? 'lg:mr-64' : 'lg:ml-64'
         }`}
       >
         {/* Top Header Bar */}
@@ -45,6 +49,15 @@ export function Layout() {
 
           {/* Right: notifications + user */}
           <div className="flex items-center gap-3">
+            <button
+              onClick={toggleLanguage}
+              className="h-9 px-3 inline-flex items-center gap-2 rounded-lg border border-white/10 text-sm text-gray-300 hover:text-white hover:bg-white/5 transition-colors"
+              title={t('switchLanguage')}
+            >
+              <Languages size={16} />
+              <span>{language === 'ar' ? 'EN' : 'AR'}</span>
+            </button>
+
             <NotificationDropdown />
 
             <div className="h-8 w-px bg-white/10" />
@@ -57,16 +70,16 @@ export function Layout() {
               </Avatar>
               <div className="hidden md:block">
                 <p className="text-sm font-medium text-white leading-tight">
-                  {user?.name || 'User'}
+                  {user?.name || t('userFallback')}
                 </p>
-                <p className="text-xs text-gray-400 capitalize">
-                  {user?.role || 'user'}
+                <p className="text-xs text-gray-400">
+                  {t(`roles.${user?.role || 'user'}`)}
                 </p>
               </div>
               <button
                 onClick={logout}
                 className="p-2 text-gray-400 hover:text-danger hover:bg-danger/10 transition-colors rounded-lg"
-                title="Logout"
+                title={t('logout')}
               >
                 <LogOut size={16} />
               </button>
